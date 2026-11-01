@@ -22,6 +22,8 @@ export class RoutePolicy {
         target: target.origin,
         publicOrigin,
         rewrite: route.rewrite || null,
+        preservePaths: Array.isArray(route.preservePaths) ? [...route.preservePaths] : [],
+        passthroughPaths: Array.isArray(route.passthroughPaths) ? [...route.passthroughPaths] : [],
       }));
     }
   }

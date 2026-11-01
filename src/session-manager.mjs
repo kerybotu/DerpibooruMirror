@@ -70,6 +70,14 @@ export class SessionManager {
     return this.#jar(session, origin).getCookieString(upstreamUrl);
   }
 
+  browserCookiesForPassthrough(cookieHeader) {
+    if (!cookieHeader) return '';
+    return cookieHeader.split(';').map(part => part.trim()).filter(part => {
+      const key = part.split('=', 1)[0].trim();
+      return key && key !== this.#cookieName;
+    }).join('; ');
+  }
+
   async receiveSetCookies(session, upstreamUrl, setCookies) {
     if (!Array.isArray(setCookies) || setCookies.length === 0) return;
     const origin = new URL(upstreamUrl).origin;

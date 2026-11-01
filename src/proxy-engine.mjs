@@ -24,6 +24,10 @@ function copyHeaders(headers) {
   return copied;
 }
 
+function matchesPath(reqUrl, paths) {
+  return paths.some((prefix) => typeof prefix === 'string' && reqUrl.startsWith(prefix));
+}
+
 export class ProxyEngine extends EventEmitter {
   #proxy;
   #sessions;
@@ -64,8 +68,12 @@ export class ProxyEngine extends EventEmitter {
     const requestId = createRequestId();
     const { session, isNew } = this.#sessions.getOrCreate(req.headers.cookie);
     const upstreamUrl = new URL(req.url, route.target).href;
-    const cookie = await this.#sessions.getUpstreamCookie(session, upstreamUrl);
-    const context = { requestId, route, routeName, session, isNew, upstreamUrl, startedAt: Date.now(), clientAborted: false, clientAbortReported: false, timedOut: false };
+    const passthrough = matchesPath(req.url, route.passthroughPaths || []);
+    const preserve = passthrough || matchesPath(req.url, route.preservePaths || []);
+    const cookie = passthrough
+      ? this.#sessions.browserCookiesForPassthrough(req.headers.cookie)
+      : await this.#sessions.getUpstreamCookie(session, upstreamUrl);
+    const context = { requestId, route, routeName, session, isNew, passthrough, preserve, upstreamUrl, startedAt: Date.now(), clientAborted: false, clientAbortReported: false, timedOut: false };
     this.#requestContexts.set(req, context);
     req.once('aborted', () => {
       context.clientAborted = true;
@@ -103,8 +111,12 @@ export class ProxyEngine extends EventEmitter {
     if (!route?.target) throw new TypeError('a validated route is required');
     const requestId = createRequestId();
     const { session } = this.#sessions.getOrCreate(req.headers.cookie);
+    const passthrough = matchesPath(req.url, route.passthroughPaths || []);
     const upstreamUrl = new URL(req.url, route.target).href;
-    this.#sessions.getUpstreamCookie(session, upstreamUrl).then((cookie) => {
+    const cookiePromise = passthrough
+      ? Promise.resolve(this.#sessions.browserCookiesForPassthrough(req.headers.cookie))
+      : this.#sessions.getUpstreamCookie(session, upstreamUrl);
+    cookiePromise.then((cookie) => {
       this.#proxy.ws(req, socket, head, { ...this.#proxyOptions, target: route.target, headers: { cookie } });
     }).catch(() => socket.destroy());
     this.emit('upgrade', { requestId, method: req.method, route: routeName, upstreamHost: new URL(route.target).host });
@@ -126,15 +138,17 @@ export class ProxyEngine extends EventEmitter {
       headerNames: Object.keys(headers),
     });
 
-    await this.#sessions.receiveSetCookies(context.session, context.upstreamUrl, headers['set-cookie']);
-    delete headers['set-cookie'];
-    if (context.isNew) headers['set-cookie'] = [this.#sessions.browserCookie(context.session)];
+    if (!context.passthrough) {
+      await this.#sessions.receiveSetCookies(context.session, context.upstreamUrl, headers['set-cookie']);
+      delete headers['set-cookie'];
+    }
+    if (context.isNew && !context.passthrough) headers['set-cookie'] = [...(headers['set-cookie'] || []), this.#sessions.browserCookie(context.session)];
 
-    if (headers.location && this.#rewriter) {
+    if (headers.location && this.#rewriter && !context.preserve) {
       headers.location = this.#rewriter.rewriteLocation(headers.location, context.upstreamUrl);
     }
 
-    const shouldRewrite = this.#rewriter && REWRITE_TYPES.has(contentType(headers['content-type'])) && !headers['content-encoding'] && req.method !== 'HEAD';
+    const shouldRewrite = this.#rewriter && !context.preserve && REWRITE_TYPES.has(contentType(headers['content-type'])) && !headers['content-encoding'] && req.method !== 'HEAD';
     if (!shouldRewrite) {
       this.#sendHeaders(res, proxyRes.statusCode, headers, context.requestId);
       proxyRes.pipe(res);

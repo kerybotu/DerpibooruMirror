@@ -39,6 +39,14 @@ test('proxy engine HTTP, cookies, redirects, streams, Range, WebSocket and diagn
       res.writeHead(200, { 'content-type': 'text/plain', 'set-cookie': ['user=one; Path=/; HttpOnly; SameSite=Lax', 'prefs=dark; Path=/'] });
       return res.end('set');
     }
+    if (url.pathname === '/challenge') {
+      res.writeHead(302, { location: '/challenge-next', 'set-cookie': ['challenge=browser; Path=/challenge; HttpOnly'] });
+      return res.end();
+    }
+    if (url.pathname === '/challenge-echo') {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      return res.end(req.headers.cookie || 'none');
+    }
     if (url.pathname === '/cookie-echo') {
       res.writeHead(200, { 'content-type': 'text/plain' });
       return res.end(req.headers.cookie || 'none');
@@ -82,7 +90,7 @@ test('proxy engine HTTP, cookies, redirects, streams, Range, WebSocket and diagn
   upstream.on('upgrade', (req, socket, head) => wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req)));
   const upstreamPort = await listen(upstream);
   const target = `http://127.0.0.1:${upstreamPort}`;
-  const policy = new RoutePolicy({ main: { target, publicOrigin: 'http://mirror.test' } });
+  const policy = new RoutePolicy({ main: { target, publicOrigin: 'http://mirror.test', preservePaths: ['/challenge'], passthroughPaths: ['/challenge'] } });
   const sessions = new SessionManager({ secure: false });
   const rewriter = new UrlRewriter({ publicOrigin: 'http://mirror.test', upstreamOrigins: [{ upstreamOrigin: target, mirrorOrigin: 'http://mirror.test' }] });
   const engine = new ProxyEngine({ sessionManager: sessions, urlRewriter: rewriter, proxyTimeoutMs: 100, timeoutMs: 1000, maxRewriteBytes: 1024 });
@@ -118,6 +126,15 @@ test('proxy engine HTTP, cookies, redirects, streams, Range, WebSocket and diagn
   await t.test('relative Location maps to mirror origin', async () => {
     const result = await request(port, '/redirect');
     assert.equal(result.status, 302); assert.equal(result.headers.location, 'http://mirror.test/target?x=1');
+  });
+  await t.test('challenge paths preserve upstream cookies, Location and body', async () => {
+    const challenge = await request(port, '/challenge');
+    assert.equal(challenge.status, 302);
+    assert.equal(challenge.headers.location, '/challenge-next');
+    assert.equal(challenge.headers['set-cookie'].length, 1);
+    assert.ok(challenge.headers['set-cookie'][0].startsWith('challenge=browser'));
+    const echoed = await request(port, '/challenge-echo', { headers: { cookie: 'mirror_sid=ignored; challenge=browser' } });
+    assert.equal(echoed.body.toString(), 'challenge=browser');
   });
   await t.test('HTML CSS and JSON use parser-based URL mapping', async () => {
     assert.ok((await request(port, '/html')).body.toString().includes('http://mirror.test/target'));
