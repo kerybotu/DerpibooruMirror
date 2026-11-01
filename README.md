@@ -11,7 +11,7 @@ The engine uses `http-proxy@1.18.1` for low-level HTTP/HTTPS and WebSocket trans
 - Each session has a separate `CookieJar` per upstream origin.
 - Upstream `Set-Cookie` headers are consumed by the session manager and are not forwarded to the browser.
 - Media, Range, WebSocket, and responses over the rewrite limit stay streaming.
-- The engine keeps upstream status and headers in the request context and emits sanitized diagnostic events.
+- The engine keeps upstream status and headers in `engine.getContext(req).upstreamResponse` for response modules; diagnostic events expose status and header names only.
 - Upstream TLS verification remains enabled (`secure: true`).
 
 ## Local verification
@@ -23,3 +23,5 @@ npm run test:coverage
 ```
 
 The tests use only a local self-built upstream. They do not simulate or bypass Anubis, Cloudflare, or any third-party authentication challenge.
+
+Attach `createDiagnosticLogger()` to the `request`, `response`, and `error-classified` events at the application boundary. The logger redacts sensitive query fields and never serializes Cookie or Authorization headers. Do not write `getContext(req).upstreamResponse.headers` to ordinary logs.

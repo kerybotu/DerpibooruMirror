@@ -13,9 +13,11 @@
   "dependencies": {
     "http-proxy": "1.18.1",
     "parse5": "7.3.0",
-    "postcss": "8.5.6",
+    "postcss": "8.5.32",
     "postcss-value-parser": "4.2.0",
-    "tough-cookie": "6.0.0",
-    "ws": "8.18.0"
+    "tough-cookie": "6.0.0"
+  },
+  "devDependencies": {
+    "ws": "8.22.1"
   }
 }

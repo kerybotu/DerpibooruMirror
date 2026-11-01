@@ -3,6 +3,7 @@ import postcss from 'postcss';
 import valueParser from 'postcss-value-parser';
 
 const HTML_ATTRIBUTES = new Set(['href', 'src', 'action', 'poster', 'cite', 'formaction', 'srcset']);
+const JSON_URL_KEYS = /(?:^|[_-])(url|uri|href|src|link|location|redirect|poster|image|video|action|endpoint)s?$/i;
 
 function pathWithQuery(url) {
   return `${url.pathname}${url.search}${url.hash}`;
@@ -44,13 +45,18 @@ export class UrlRewriter {
 
   rewriteHtml(source, baseUrl) {
     const document = parse(source);
+    let effectiveBase = baseUrl;
     const walk = (node) => {
       if (node.attrs) {
+        const baseAttr = node.nodeName === 'base' ? node.attrs.find((attr) => attr.name === 'href') : null;
+        if (baseAttr) {
+          try { effectiveBase = new URL(baseAttr.value, baseUrl).href; } catch { /* retain response URL */ }
+        }
         for (const attr of node.attrs) {
-          if (HTML_ATTRIBUTES.has(attr.name)) attr.value = this.rewrite(attr.value, baseUrl);
+          if (HTML_ATTRIBUTES.has(attr.name)) attr.value = this.rewrite(attr.value, effectiveBase);
           if (attr.name === 'srcset') attr.value = attr.value.split(',').map((item) => {
             const parts = item.trim().split(/\s+/);
-            if (parts[0]) parts[0] = this.rewrite(parts[0], baseUrl);
+            if (parts[0]) parts[0] = this.rewrite(parts[0], effectiveBase);
             return parts.join(' ');
           }).join(', ');
         }
@@ -63,25 +69,28 @@ export class UrlRewriter {
 
   rewriteCss(source, baseUrl) {
     const root = postcss.parse(source);
-    root.walk((node) => {
-      if (typeof node.value !== 'string') return;
-      const parsed = valueParser(node.value);
+    const rewriteValue = (value) => {
+      const parsed = valueParser(value);
       parsed.walk((item) => {
         if (item.type === 'function' && item.value.toLowerCase() === 'url') {
           const first = item.nodes?.find((part) => part.type === 'word' || part.type === 'string');
           if (first) first.value = this.rewrite(first.value, baseUrl);
         }
       });
-      node.value = parsed.toString();
+      return parsed.toString();
+    };
+    root.walk((node) => {
+      if (typeof node.value === 'string') node.value = rewriteValue(node.value);
+      if (node.type === 'atrule' && typeof node.params === 'string') node.params = rewriteValue(node.params);
     });
     return root.toString();
   }
 
   rewriteJson(source, baseUrl) {
-    const walk = (value) => {
+    const walk = (value, key = '') => {
       if (Array.isArray(value)) return value.map(walk);
-      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, walk(child)]));
-      if (typeof value === 'string') return this.rewrite(value, baseUrl);
+      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([childKey, child]) => [childKey, walk(child, childKey)]));
+      if (typeof value === 'string' && (JSON_URL_KEYS.test(key) || /^https?:\/\//i.test(value) || /^\/\//.test(value))) return this.rewrite(value, baseUrl);
       return value;
     };
     try {

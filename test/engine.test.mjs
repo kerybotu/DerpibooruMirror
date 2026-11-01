@@ -150,4 +150,30 @@ test('proxy engine HTTP, cookies, redirects, streams, Range, WebSocket and diagn
     assert.equal(disconnected.status, 502);
     assert.ok(errors.length >= 2);
   });
+  await t.test('DNS failure is classified as 502 without opening an arbitrary upstream', async () => {
+    const dnsSessions = new SessionManager({ secure: false });
+    const dnsErrors = [];
+    const dnsEngine = new ProxyEngine({ sessionManager: dnsSessions, proxyTimeoutMs: 250, timeoutMs: 250 });
+    dnsEngine.on('error-classified', event => dnsErrors.push(event));
+    const dnsRoute = new RoutePolicy({ missing: { target: 'http://does-not-exist.invalid', publicOrigin: 'http://mirror.test' } }).get('missing');
+    const dnsMirror = http.createServer((req, res) => dnsEngine.handle(req, res, { route: dnsRoute }));
+    const dnsPort = await listen(dnsMirror);
+    try {
+      const result = await request(dnsPort, '/');
+      assert.equal(result.status, 502);
+      assert.equal(dnsErrors.at(-1).category, 'dns-failure');
+    } finally {
+      dnsMirror.closeAllConnections();
+      await close(dnsMirror);
+    }
+  });
+  await t.test('client cancellation is not converted into a second response', async () => {
+    await new Promise((resolve) => {
+      const client = http.get({ hostname: '127.0.0.1', port, path: '/slow' });
+      client.once('error', () => resolve());
+      setTimeout(() => client.destroy(), 10);
+    });
+    await new Promise(resolve => setTimeout(resolve, 150));
+    assert.ok(errors.some(event => event.category === 'client-aborted'));
+  });
 });

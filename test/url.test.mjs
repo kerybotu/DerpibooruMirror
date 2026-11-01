@@ -16,16 +16,18 @@ test('URL mapping parses absolute, relative, protocol-relative and websocket URL
 });
 
 test('HTML and JSON rewrite only known upstream URLs', () => {
-  const html = rewriter.rewriteHtml('<a href="/a">a</a><img src="https://media.test/x.png"><form action="/submit"></form>', 'https://upstream.test/');
+  const html = rewriter.rewriteHtml('<base href="/assets/"><a href="/a">a</a><a href="page.html">page</a><img src="https://media.test/x.png"><form action="/submit"></form>', 'https://upstream.test/');
   assert.ok(html.includes('https://mirror.test/a'));
+  assert.ok(html.includes('https://mirror.test/assets/page.html'));
   assert.ok(html.includes('https://media.mirror.test/x.png'));
   assert.ok(html.includes('https://mirror.test/submit'));
   const json = JSON.parse(rewriter.rewriteJson('{"url":"https://media.test/x","text":"hello"}', 'https://upstream.test/'));
   assert.equal(json.url, 'https://media.mirror.test/x');
-  assert.equal(json.text, 'https://mirror.test/hello');
+  assert.equal(json.text, 'hello');
 });
 
 test('CSS url functions are parsed and rewritten', () => {
-  const css = rewriter.rewriteCss('a{background:url("https://media.test/x.png")}', 'https://upstream.test/style.css');
+  const css = rewriter.rewriteCss('@import url("https://media.test/base.css");a{background:url("https://media.test/x.png")}', 'https://upstream.test/style.css');
+  assert.ok(css.includes('https://media.mirror.test/base.css'));
   assert.ok(css.includes('https://media.mirror.test/x.png'));
 });

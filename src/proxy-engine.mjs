@@ -65,11 +65,25 @@ export class ProxyEngine extends EventEmitter {
     const { session, isNew } = this.#sessions.getOrCreate(req.headers.cookie);
     const upstreamUrl = new URL(req.url, route.target).href;
     const cookie = await this.#sessions.getUpstreamCookie(session, upstreamUrl);
-    const context = { requestId, route, routeName, session, isNew, upstreamUrl, startedAt: Date.now(), clientAborted: false, timedOut: false };
+    const context = { requestId, route, routeName, session, isNew, upstreamUrl, startedAt: Date.now(), clientAborted: false, clientAbortReported: false, timedOut: false };
     this.#requestContexts.set(req, context);
-    req.once('aborted', () => { context.clientAborted = true; });
-    res.once('close', () => { if (!res.writableEnded) context.clientAborted = true; });
-    this.emit('request', { requestId, method: req.method, route: routeName, upstreamHost: new URL(route.target).host });
+    req.once('aborted', () => {
+      context.clientAborted = true;
+      if (!context.clientAbortReported) {
+        context.clientAbortReported = true;
+        this.emit('error-classified', { requestId, category: 'client-aborted', statusCode: null, code: 'CLIENT_ABORTED' });
+      }
+    });
+    res.once('close', () => {
+      if (!res.writableEnded) {
+        context.clientAborted = true;
+        if (!context.clientAbortReported) {
+          context.clientAbortReported = true;
+          this.emit('error-classified', { requestId, category: 'client-aborted', statusCode: null, code: 'CLIENT_ABORTED' });
+        }
+      }
+    });
+    this.emit('request', { requestId, method: req.method, route: routeName, path: req.url, upstreamHost: new URL(route.target).host });
     const timeoutTimer = setTimeout(() => { context.timedOut = true; }, Math.max(1, this.#proxyOptions.proxyTimeout - 10));
     try {
       this.#proxy.web(req, res, {
@@ -97,14 +111,19 @@ export class ProxyEngine extends EventEmitter {
     return { requestId };
   }
 
+  getContext(req) {
+    return this.#requestContexts.get(req) || null;
+  }
+
   async #handleProxyResponse(proxyRes, req, res, context) {
     const headers = { ...proxyRes.headers };
     context.upstreamResponse = { statusCode: proxyRes.statusCode, headers: { ...headers } };
+    this.emit('response', { requestId: context.requestId, statusCode: proxyRes.statusCode, upstreamStatus: proxyRes.statusCode, elapsedMs: Date.now() - context.startedAt });
     this.emit('upstream-response', {
       requestId: context.requestId,
       statusCode: proxyRes.statusCode,
       upstreamStatus: proxyRes.statusCode,
-      headers: { ...headers },
+      headerNames: Object.keys(headers),
     });
 
     await this.#sessions.receiveSetCookies(context.session, context.upstreamUrl, headers['set-cookie']);
@@ -128,17 +147,26 @@ export class ProxyEngine extends EventEmitter {
       this.#sendHeaders(res, proxyRes.statusCode, headers, context.requestId);
       res.write(body.buffer);
       proxyRes.pipe(res);
+      proxyRes.once('error', (error) => this.#handleError(error, req, res, context));
       return;
     }
     const input = body.buffer.toString('utf8');
     const type = contentType(headers['content-type']);
-    const rewritten = type === 'text/html'
-      ? this.#rewriter.rewriteHtml(input, context.upstreamUrl)
-      : type === 'text/css'
-        ? this.#rewriter.rewriteCss(input, context.upstreamUrl)
-        : type === 'application/json'
-          ? this.#rewriter.rewriteJson(input, context.upstreamUrl)
-          : input;
+    let rewritten;
+    try {
+      rewritten = type === 'text/html'
+        ? this.#rewriter.rewriteHtml(input, context.upstreamUrl)
+        : type === 'text/css'
+          ? this.#rewriter.rewriteCss(input, context.upstreamUrl)
+          : type === 'application/json'
+            ? this.#rewriter.rewriteJson(input, context.upstreamUrl)
+            : input;
+    } catch (error) {
+      this.emit('error-classified', { requestId: context.requestId, category: 'response-parse-failure', statusCode: proxyRes.statusCode, code: error.code || 'REWRITE_PARSE_ERROR' });
+      this.#sendHeaders(res, proxyRes.statusCode, headers, context.requestId);
+      res.end(body.buffer);
+      return;
+    }
     const output = Buffer.from(rewritten);
     delete headers['content-length'];
     delete headers.etag;
