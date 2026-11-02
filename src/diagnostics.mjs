@@ -18,7 +18,10 @@ export function createDiagnosticLogger(write = (line) => process.stderr.write(`$
       emit({ type: 'request', requestId: event.requestId, method: event.method, route: event.route, upstreamHost: event.upstreamHost, path: sanitizePath(event.path || '/') });
     },
     response(event) {
-      emit({ type: 'response', requestId: event.requestId, status: event.statusCode, upstreamStatus: event.upstreamStatus, elapsedMs: event.elapsedMs });
+      emit({ type: 'client-response', requestId: event.requestId, status: event.clientStatus, elapsedMs: event.elapsedMs });
+    },
+    upstreamResponse(event) {
+      emit({ type: 'upstream-response', requestId: event.requestId, status: event.upstreamStatus, elapsedMs: event.elapsedMs });
     },
     error(event) {
       emit({ type: 'error', requestId: event.requestId, category: event.category, code: event.code, status: event.statusCode });

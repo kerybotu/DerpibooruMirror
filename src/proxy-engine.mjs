@@ -2,6 +2,7 @@ import httpProxy from 'http-proxy';
 import { EventEmitter } from 'node:events';
 import { createRequestId } from './request-id.mjs';
 import { classifyProxyError, errorResponse } from './errors.mjs';
+import { recordRedirect } from './request-context.mjs';
 
 const REWRITE_TYPES = new Set([
   'text/html',
@@ -63,9 +64,9 @@ export class ProxyEngine extends EventEmitter {
     });
   }
 
-  async handle(req, res, { route, routeName = route?.name } = {}) {
+  async handle(req, res, { route, routeName = route?.name, requestContext = null } = {}) {
     if (!route?.target) throw new TypeError('a validated route is required');
-    const requestId = createRequestId();
+    const requestId = requestContext?.request_id || createRequestId();
     const { session, isNew } = this.#sessions.getOrCreate(req.headers.cookie);
     const upstreamUrl = new URL(req.url, route.target).href;
     const passthrough = matchesPath(req.url, route.passthroughPaths || []);
@@ -73,7 +74,8 @@ export class ProxyEngine extends EventEmitter {
     const cookie = passthrough
       ? this.#sessions.browserCookiesForPassthrough(req.headers.cookie)
       : await this.#sessions.getUpstreamCookie(session, upstreamUrl);
-    const context = { requestId, route, routeName, session, isNew, passthrough, preserve, upstreamUrl, startedAt: Date.now(), clientAborted: false, clientAbortReported: false, timedOut: false };
+    const context = { requestId, route, routeName, session, isNew, passthrough, preserve, upstreamUrl, startedAt: Date.now(), clientAborted: false, clientAbortReported: false, timedOut: false, requestContext };
+    if (requestContext) requestContext.response_processing_stage = 'upstream-request';
     this.#requestContexts.set(req, context);
     req.once('aborted', () => {
       context.clientAborted = true;
@@ -107,9 +109,9 @@ export class ProxyEngine extends EventEmitter {
     return { requestId, session, isNew };
   }
 
-  handleUpgrade(req, socket, head, { route, routeName = route?.name } = {}) {
+  handleUpgrade(req, socket, head, { route, routeName = route?.name, requestContext = null } = {}) {
     if (!route?.target) throw new TypeError('a validated route is required');
-    const requestId = createRequestId();
+    const requestId = requestContext?.request_id || createRequestId();
     const { session } = this.#sessions.getOrCreate(req.headers.cookie);
     const passthrough = matchesPath(req.url, route.passthroughPaths || []);
     const upstreamUrl = new URL(req.url, route.target).href;
@@ -130,6 +132,11 @@ export class ProxyEngine extends EventEmitter {
   async #handleProxyResponse(proxyRes, req, res, context) {
     const headers = { ...proxyRes.headers };
     context.upstreamResponse = { statusCode: proxyRes.statusCode, headers: { ...headers } };
+    if (context.requestContext) {
+      context.requestContext.upstream_status = proxyRes.statusCode;
+      context.requestContext.response_processing_stage = 'upstream-response';
+      if (headers.location) recordRedirect(context.requestContext, headers.location, 'upstream-response');
+    }
     this.emit('response', { requestId: context.requestId, statusCode: proxyRes.statusCode, upstreamStatus: proxyRes.statusCode, elapsedMs: Date.now() - context.startedAt });
     this.emit('upstream-response', {
       requestId: context.requestId,
@@ -139,14 +146,19 @@ export class ProxyEngine extends EventEmitter {
     });
 
     if (!context.passthrough) {
-      await this.#sessions.receiveSetCookies(context.session, context.upstreamUrl, headers['set-cookie']);
+      const summary = await this.#sessions.receiveSetCookies(context.session, context.upstreamUrl, headers['set-cookie']);
+      if (context.requestContext) Object.assign(context.requestContext.cookie_processing_summary, summary);
       delete headers['set-cookie'];
+    } else if (context.requestContext) {
+      context.requestContext.cookie_processing_summary.received = Array.isArray(headers['set-cookie']) ? headers['set-cookie'].length : 0;
+      context.requestContext.cookie_processing_summary.forwarded = context.requestContext.cookie_processing_summary.received > 0;
     }
     if (context.isNew && !context.passthrough) headers['set-cookie'] = [...(headers['set-cookie'] || []), this.#sessions.browserCookie(context.session)];
 
     if (headers.location && this.#rewriter && !context.preserve) {
       headers.location = this.#rewriter.rewriteLocation(headers.location, context.upstreamUrl);
     }
+    if (headers.location && context.requestContext) recordRedirect(context.requestContext, headers.location, 'client-response');
 
     const shouldRewrite = this.#rewriter && !context.preserve && REWRITE_TYPES.has(contentType(headers['content-type'])) && !headers['content-encoding'] && req.method !== 'HEAD';
     if (!shouldRewrite) {

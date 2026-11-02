@@ -79,16 +79,20 @@ export class SessionManager {
   }
 
   async receiveSetCookies(session, upstreamUrl, setCookies) {
-    if (!Array.isArray(setCookies) || setCookies.length === 0) return;
+    const summary = { received: Array.isArray(setCookies) ? setCookies.length : 0, stored: 0, rejected: 0, forwarded: false };
+    if (!Array.isArray(setCookies) || setCookies.length === 0) return summary;
     const origin = new URL(upstreamUrl).origin;
     const jar = this.#jar(session, origin);
     for (const value of setCookies) {
       try {
         await jar.setCookie(value, upstreamUrl);
+        summary.stored++;
       } catch {
         // Invalid or cross-domain upstream cookies are rejected by design.
+        summary.rejected++;
       }
     }
+    return summary;
   }
 
   destroy(id) {
