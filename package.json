@@ -1,14 +1,19 @@
 {
   "name": "derpibooru-mirror-engine",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
+  "description": "Fixed-origin reverse proxy for Derpibooru with Anubis compatibility",
+  "license": "MIT",
+  "bin": { "derpibooru-mirror": "src/server.mjs" },
+  "files": ["src/**/*.mjs", "config/config.example.json", "README.md", "CHANGELOG.md", "LICENSE"],
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test --test-reporter spec",
-    "test:coverage": "node --test --experimental-test-coverage"
+    "test": "node --test --test-reporter spec \"test/*.test.mjs\"",
+    "test:coverage": "node --test --experimental-test-coverage",
+    "start": "node src/server.mjs"
   },
   "dependencies": {
     "http-proxy": "1.18.1",

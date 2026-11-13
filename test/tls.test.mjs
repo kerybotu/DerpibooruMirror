@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import https from 'node:https';
 import http from 'node:http';
-import { ProxyEngine, SessionManager, RoutePolicy } from '../src/index.mjs';
+import { ProxyEngine, SessionManager, RoutePolicy, ClientGateway, UpstreamGateway } from '../src/index.mjs';
 
 function listen(server) {
   return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server.address().port)));
@@ -58,7 +58,9 @@ test('TLS upstream verification accepts an explicitly trusted CA and rejects an 
   const badEngine = new ProxyEngine({ sessionManager: new SessionManager({ secure: false }) });
   badEngine.on('error-classified', event => badErrors.push(event));
   const goodMirror = http.createServer((req, res) => goodEngine.handle(req, res, { route }));
-  const badMirror = http.createServer((req, res) => badEngine.handle(req, res, { route }));
+  const badGateway = new ClientGateway({ upstreamGateway: new UpstreamGateway({ engine: badEngine }), publicOrigin: 'http://mirror.test', route });
+  let badContext;
+  const badMirror = http.createServer(async (req, res) => { badContext = (await badGateway.handle(req, res)).context; });
   const goodPort = await listen(goodMirror);
   const badPort = await listen(badMirror);
   t.after(async () => { goodMirror.closeAllConnections(); badMirror.closeAllConnections(); upstream.closeAllConnections(); await close(goodMirror); await close(badMirror); await close(upstream); fs.rmSync(dir, { recursive: true, force: true }); });
@@ -68,6 +70,9 @@ test('TLS upstream verification accepts an explicitly trusted CA and rejects an 
   const bad = await request(badPort);
   assert.equal(bad.status, 502);
   assert.equal(badErrors.at(-1).category, 'tls-handshake-failure');
+  assert.equal(badContext.error_category, 'tls-handshake-failure');
+  assert.equal(badContext.error_stage, 'upstream-tls');
+  assert.equal(badContext.response_processing_stage, 'error');
 });
 
 test('TLS verification cannot be disabled through engine options', () => {

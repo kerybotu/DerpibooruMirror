@@ -1,0 +1,10 @@
+Options -Indexes
+FallbackResource /anubis-bridge-test/index.php
+
+<FilesMatch "^(secret|records)\.php$">
+  Require all denied
+</FilesMatch>
+
+<Files "records.ndjson">
+  Require all denied
+</Files>

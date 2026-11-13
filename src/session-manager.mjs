@@ -34,7 +34,7 @@ export class SessionManager {
 
   #newSession() {
     const id = createId();
-    const session = { id, jars: new Map(), createdAt: Date.now(), touchedAt: Date.now() };
+    const session = { id, flowId: createId().slice(0, 16), jars: new Map(), upstreamBrowserCookieNames: new Set(), anubisVersion: null, createdAt: Date.now(), touchedAt: Date.now() };
     this.#sessions.set(id, session);
     return session;
   }
@@ -68,6 +68,22 @@ export class SessionManager {
   async getUpstreamCookie(session, upstreamUrl) {
     const origin = new URL(upstreamUrl).origin;
     return this.#jar(session, origin).getCookieString(upstreamUrl);
+  }
+
+  async getUpstreamCookieWithBrowserCookies(session, upstreamUrl, cookieHeader) {
+    const fromJar = await this.getUpstreamCookie(session, upstreamUrl);
+    const allowedNames = session?.upstreamBrowserCookieNames;
+    if (!cookieHeader || !allowedNames?.size) return fromJar;
+    const browserCookies = [];
+    for (const part of cookieHeader.split(';')) {
+      const separator = part.indexOf('=');
+      if (separator <= 0) continue;
+      const name = part.slice(0, separator).trim();
+      if (allowedNames.has(name)) browserCookies.push(part.trim());
+    }
+    const jarNames = new Set(fromJar.split(';').map((part) => part.split('=', 1)[0].trim()).filter(Boolean));
+    const selected = browserCookies.filter((part) => !jarNames.has(part.split('=', 1)[0].trim()));
+    return [fromJar, ...selected].filter(Boolean).join('; ');
   }
 
   browserCookiesForPassthrough(cookieHeader) {

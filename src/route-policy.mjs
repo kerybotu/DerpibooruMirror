@@ -17,13 +17,31 @@ export class RoutePolicy {
       const target = new URL(route.target);
       if (!['http:', 'https:'].includes(target.protocol)) throw new Error(`Unsupported target protocol for ${name}`);
       const publicOrigin = normalizeOrigin(route.publicOrigin);
+      const upstreamHost = route.upstreamHost == null ? null : String(route.upstreamHost);
+      if (upstreamHost && (!/^[A-Za-z0-9.-]+(?::\d{1,5})?$/.test(upstreamHost) || upstreamHost.includes('..'))) {
+        throw new Error(`Route ${name} upstreamHost is invalid`);
+      }
+      let anubisBridge = null;
+      if (route.anubisBridge?.enabled) {
+        const bridge = route.anubisBridge;
+        if (typeof bridge.supportedVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(bridge.supportedVersion)) throw new Error(`Route ${name} Anubis bridge requires an exact supportedVersion`);
+        const upstreamOrigin = bridge.upstreamOrigin == null ? target.origin : normalizeOrigin(bridge.upstreamOrigin);
+        anubisBridge = Object.freeze({
+          supportedVersion: bridge.supportedVersion,
+          cookiePrefix: bridge.cookiePrefix || 'techaro.lol-anubis',
+          basePrefix: bridge.basePrefix || '',
+          upstreamOrigin,
+        });
+      }
       this.#routes.set(name, Object.freeze({
         name,
         target: target.origin,
+        upstreamHost,
         publicOrigin,
         rewrite: route.rewrite || null,
         preservePaths: Array.isArray(route.preservePaths) ? [...route.preservePaths] : [],
         passthroughPaths: Array.isArray(route.passthroughPaths) ? [...route.passthroughPaths] : [],
+        anubisBridge,
       }));
     }
   }

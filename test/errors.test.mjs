@@ -17,3 +17,21 @@ test('route policy is fixed and rejects unconfigured route names', () => {
   assert.throws(() => policy.get('https://evil.test'));
   assert.throws(() => new RoutePolicy({ bad: { target: 'file:///tmp/x', publicOrigin: 'https://mirror.test' } }));
 });
+
+test('route policy accepts fixed network-to-logical upstream identity overrides', () => {
+  const route = new RoutePolicy({
+    local: {
+      target: 'http://127.0.0.1:18925',
+      upstreamHost: 'serve.495648.xyz',
+      publicOrigin: 'http://192.168.0.100:18558',
+      anubisBridge: { enabled: true, supportedVersion: '1.28.2', upstreamOrigin: 'https://serve.495648.xyz' },
+    },
+  }).get('local');
+
+  assert.equal(route.target, 'http://127.0.0.1:18925');
+  assert.equal(route.upstreamHost, 'serve.495648.xyz');
+  assert.equal(route.anubisBridge.upstreamOrigin, 'https://serve.495648.xyz');
+  assert.throws(() => new RoutePolicy({ bad: {
+    target: 'http://127.0.0.1:18925', publicOrigin: 'http://192.168.0.100:18558', upstreamHost: 'serve.495648.xyz/path',
+  } }));
+});

@@ -1,9 +1,11 @@
 export { ProxyEngine } from './proxy-engine.mjs';
 export { SessionManager } from './session-manager.mjs';
+export { AnubisCompatibilityBridge } from './anubis-bridge.mjs';
+export { createAnubisBridge } from './anubis-bridge/index.mjs';
 export { RoutePolicy, isAllowedUpstream } from './route-policy.mjs';
 export { UrlRewriter } from './url-rewriter.mjs';
 export { classifyProxyError, errorResponse } from './errors.mjs';
 export { createRequestId } from './request-id.mjs';
 export { sanitizePath, createDiagnosticLogger } from './diagnostics.mjs';
-export { createRequestContext, recordRedirect } from './request-context.mjs';
+export { createRequestContext, recordError, recordRedirect, sanitizeErrorMessage, transitionResponseStage } from './request-context.mjs';
 export { UpstreamGateway, ClientGateway } from './gateways.mjs';

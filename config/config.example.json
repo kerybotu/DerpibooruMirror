@@ -1,0 +1,22 @@
+{
+  "privacy_notice": "Ordinary upstream cookies are held in per-session memory on the proxy server and are not persisted to disk. Anubis cookies remain browser-managed. Cookie values are not written to application diagnostics. The proxy operator is responsible for host security and logging; Derpibooru policy covers only data processed by Derpibooru.",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 3000,
+    "secure": false
+  },
+  "upstream": {
+    "origin": "https://derpibooru.org",
+    "host": "derpibooru.org",
+    "timeout_ms": 30000,
+    "tls_verify": true
+  },
+  "client": {
+    "origin": "http://127.0.0.1:3000"
+  },
+  "anubis": {
+    "enabled": true,
+    "supported_version": "1.27.0",
+    "cookie_prefix": "techaro.lol-anubis"
+  }
+}

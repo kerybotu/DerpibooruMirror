@@ -4,6 +4,7 @@ import { createDiagnosticLogger, sanitizePath } from '../src/diagnostics.mjs';
 
 test('diagnostics redact sensitive query fields and never serialize credentials', () => {
   assert.equal(sanitizePath('/challenge?token=abc&ok=yes&session=secret'), '/challenge?token=[redacted]&ok=yes&session=[redacted]');
+  assert.equal(sanitizePath('/.within.website/pass?id=challenge-id&response=proof&nonce=17&redir=https%3A%2F%2Fmirror.test%2Fprivate%3Fsearch%3Dsecret'), '/.within.website/pass?id=[redacted]&response=[redacted]&nonce=[redacted]&redir=[redacted]');
   const lines = [];
   const logger = createDiagnosticLogger(line => lines.push(line));
   logger.request({ requestId: 'r1', method: 'GET', route: 'main', upstreamHost: 'upstream.test', path: '/x?jwt=topsecret' });

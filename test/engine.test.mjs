@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { ProxyEngine, SessionManager, RoutePolicy, UrlRewriter } from '../src/index.mjs';
+import { ProxyEngine, SessionManager, RoutePolicy, UrlRewriter, ClientGateway, UpstreamGateway } from '../src/index.mjs';
 
 function listen(server) {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server.address().port)));
@@ -72,6 +72,10 @@ test('proxy engine HTTP, cookies, redirects, streams, Range, WebSocket and diagn
       return res.end(large);
     }
     if (url.pathname === '/range') {
+      if (req.headers.range === 'bytes=99-') {
+        res.writeHead(416, { 'content-type': 'video/mp4', 'content-range': 'bytes */100', 'content-length': 0, 'accept-ranges': 'bytes' });
+        return res.end();
+      }
       res.writeHead(206, { 'content-type': 'video/mp4', 'content-range': 'bytes 10-19/100', 'content-length': 10, 'accept-ranges': 'bytes' });
       return res.end('0123456789');
     }
@@ -144,6 +148,8 @@ test('proxy engine HTTP, cookies, redirects, streams, Range, WebSocket and diagn
   await t.test('Range/206 and 4 MiB binary response remain intact', async () => {
     const ranged = await request(port, '/range', { headers: { Range: 'bytes=10-19' } });
     assert.equal(ranged.status, 206); assert.equal(ranged.headers['content-range'], 'bytes 10-19/100'); assert.equal(ranged.body.length, 10);
+    const unsatisfiable = await request(port, '/range', { headers: { Range: 'bytes=99-' } });
+    assert.equal(unsatisfiable.status, 416); assert.equal(unsatisfiable.headers['content-range'], 'bytes */100');
     const result = await request(port, '/large');
     assert.equal(result.body.length, large.length); assert.ok(result.body.equals(large));
   });
@@ -173,12 +179,17 @@ test('proxy engine HTTP, cookies, redirects, streams, Range, WebSocket and diagn
     const dnsEngine = new ProxyEngine({ sessionManager: dnsSessions, proxyTimeoutMs: 250, timeoutMs: 250 });
     dnsEngine.on('error-classified', event => dnsErrors.push(event));
     const dnsRoute = new RoutePolicy({ missing: { target: 'http://does-not-exist.invalid', publicOrigin: 'http://mirror.test' } }).get('missing');
-    const dnsMirror = http.createServer((req, res) => dnsEngine.handle(req, res, { route: dnsRoute }));
+    const dnsGateway = new ClientGateway({ upstreamGateway: new UpstreamGateway({ engine: dnsEngine }), publicOrigin: 'http://mirror.test', route: dnsRoute });
+    let dnsContext;
+    const dnsMirror = http.createServer(async (req, res) => { dnsContext = (await dnsGateway.handle(req, res)).context; });
     const dnsPort = await listen(dnsMirror);
     try {
       const result = await request(dnsPort, '/');
       assert.equal(result.status, 502);
       assert.equal(dnsErrors.at(-1).category, 'dns-failure');
+      assert.equal(dnsContext.error_category, 'dns-failure');
+      assert.equal(dnsContext.error_stage, 'upstream-dns');
+      assert.equal(dnsContext.response_processing_stage, 'error');
     } finally {
       dnsMirror.closeAllConnections();
       await close(dnsMirror);
