@@ -16,7 +16,7 @@ DerpibooruMirror 是专用于 [`https://derpibooru.org`](https://derpibooru.org)
 
 浏览器连接 `client.origin`。服务端校验 Host 请求头后，由 `ClientGateway` 创建请求上下文，再将固定路由交给 `UpstreamGateway`。后者调用 `ProxyEngine`，完成上游请求转发和响应传输。二进制响应采用流式传输，URL 重写仅处理已知上游地址，并限制可重写的响应大小。
 
-`SessionManager` 为每个代理会话和上游源站（origin） 建立独立的内存 CookieJar（由 `tough-cookie` 提供）。普通上游 Cookie 只在会话期间暂存于该内存容器，以便后续请求维持会话，绝不写入磁盘。Anubis Cookie 主要由客户端浏览器持有，代理只向匹配的会话转发已识别 Cookie，并保留名称和属性摘要用于路由与诊断。
+`SessionManager` 为每个代理会话和上游源站（origin）建立独立的内存 CookieJar（由 `tough-cookie` 提供）。普通上游 Cookie 只在会话期间暂存于该内存容器，以便后续请求维持会话，绝不写入磁盘。Anubis Cookie 主要由客户端浏览器持有，代理只向匹配的会话转发已识别 Cookie，并保留名称和属性摘要用于路由与诊断。
 
 诊断日志组件支持记录请求 ID、流程 ID、状态码、Content-Type，以及 Cookie 名称和属性摘要；它不会输出凭据请求头，并会遮蔽已知的敏感查询字段。默认的 `npm start` 入口未接入逐请求诊断日志。自行接入日志时，应使用项目提供的脱敏工具，避免直接输出请求头、请求体或请求上下文。
 
@@ -58,7 +58,7 @@ MIRROR_CONFIG="$PWD/config.local.json" npm start
 
 ## 隐私与 Cookie 声明
 
-本服务端仅作为反向代理转发层。会话期间，普通上游 Cookie 会由 `SessionManager` 按会话、按上游源站 暂存于服务端内存 CookieJar，用于维持代理会话；该缓存不会持久化到磁盘。Anubis Cookie 主要由客户端浏览器持有。
+本服务端仅作为反向代理转发层。会话期间，普通上游 Cookie 会由 `SessionManager` 按会话、按上游源站暂存于服务端内存 CookieJar，用于维持代理会话；该缓存不会持久化到磁盘。Anubis Cookie 主要由客户端浏览器持有。
 
 服务端不对 Cookie、认证凭据、Token、Authorization 或其他敏感凭据进行磁盘持久化；Cookie 值和敏感凭据不会写入诊断日志或控制台，只保留路由所需的名称和属性摘要。除会话期转发所需的内存缓存外，本服务不作长期存储或数据收集。上游处理的数据适用 [Derpibooru](https://derpibooru.org) 官方 Cookie 与隐私政策。部署者仍须对经过代理的数据和自身主机、基础设施日志负责；上游政策不能替代部署者应作出的披露。
 
