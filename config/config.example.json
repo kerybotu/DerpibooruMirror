@@ -1,5 +1,5 @@
 {
-  "privacy_notice": "Ordinary upstream cookies are held in per-session memory on the proxy server and are not persisted to disk. Anubis cookies remain browser-managed. Cookie values are not written to application diagnostics. The proxy operator is responsible for host security and logging; Derpibooru policy covers only data processed by Derpibooru.",
+  "privacy_notice": "During an active session, ordinary upstream cookies are held only in a per-session, per-origin in-memory CookieJar for forwarding and are never persisted to disk. Anubis cookie values are primarily browser-managed; the proxy retains only the names/attribute summaries needed for routing and diagnostics. No cookie value, authentication credential, token, authorization header, or other sensitive credential is written to disk, application diagnostics, or console output. Apart from session-scoped memory required for forwarding, this proxy does not retain or collect that data. The proxy operator is responsible for host and infrastructure log security; Derpibooru policy covers data processed by Derpibooru.",
   "server": {
     "host": "127.0.0.1",
     "port": 3000,

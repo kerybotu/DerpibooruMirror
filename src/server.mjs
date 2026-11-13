@@ -52,6 +52,6 @@ export function createServer(config = loadConfig()) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const app = createServer();
-  process.stdout.write('Privacy notice: ordinary upstream cookies are held in per-session server memory (not disk); Anubis cookies remain browser-managed; cookie values are not logged. The proxy operator is responsible for data passing through this host. See README.md.\n');
+  process.stdout.write('Privacy notice: ordinary upstream cookies are held only in per-session, per-origin memory for forwarding (never persisted to disk); Anubis cookie values are primarily browser-managed. Cookie values, authentication credentials, tokens, authorization headers, and other sensitive credentials are not written to diagnostics or console output. See README.md.\n');
   app.server.listen(app.config.server.port, app.config.server.host, () => process.stdout.write(`Derpibooru proxy listening on ${app.config.client.origin}\n`));
 }

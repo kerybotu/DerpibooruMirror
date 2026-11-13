@@ -5,7 +5,7 @@
   "description": "Fixed-origin reverse proxy for Derpibooru with Anubis compatibility",
   "license": "MIT",
   "bin": { "derpibooru-mirror": "src/server.mjs" },
-  "files": ["src/**/*.mjs", "config/config.example.json", "README.md", "CHANGELOG.md", "LICENSE"],
+  "files": ["src/**/*.mjs", "config/config.example.json", "README.md", "README_zh_CN.md", "README_zh_TW.md", "CHANGELOG.md", "LICENSE"],
   "type": "module",
   "engines": {
     "node": ">=22"
